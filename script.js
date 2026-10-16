@@ -9,156 +9,228 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-// 核心状态变量
+// 核心系统状态
 let currentLayout = 'circular';
 let cells = [];
 let particles = [];
-let masterNeuron = null;
-let isMasterActive = true;
+let explosionParticles = [];
+let lockedCell = null;        // 被手势/点击锁定的细胞
+let isViewModel = false;      // 【查看模型】状态（全景缩放旋转模式）
+let globalScale = 1.0;
+let globalRotation = 0.0;
 let frameCount = 0;
 let lastTime = performance.now();
 let fps = 60;
 
-// 手势识别坐标对象
-const handPosition = { x: width / 2, y: height / 2, active: false, isPinching: false };
+const handPos = { x: width / 2, y: height / 2, active: false, isPinching: false, isOpenPalm: false };
 
-// 细胞类定义
+// 高保真细胞类：支持多种生物形态（植物切片多边形、神经元突触、复合细胞膜）
 class Cell {
-    constructor(x, y, type = 'normal') {
+    constructor(x, y, type = 'normal', subType = 0) {
         this.x = x;
         this.y = y;
         this.baseX = x;
         this.baseY = y;
-        this.vx = (Math.random() - 0.5) * 0.8;
-        this.vy = (Math.random() - 0.5) * 0.8;
-        this.radius = type === 'master' ? 45 : (Math.random() * 12 + 8);
-        this.type = type;
-        this.id = Math.floor(Math.random() * 900) + 10;
-        this.color = type === 'master' ? '#00f0ff' : (Math.random() > 0.4 ? '#00f0ff' : '#a855f7');
+        this.vx = (Math.random() - 0.5) * 0.6;
+        this.vy = (Math.random() - 0.5) * 0.6;
+        this.radius = type === 'master' ? 55 : (Math.random() * 18 + 14);
+        this.type = type; // 'master', 'normal'
+        this.subType = subType; // 0: 神经元细胞, 1: 植物细胞切片(多边形), 2: 膜状复合细胞
+        this.id = Math.floor(Math.random() * 900) + 100;
+        this.age = Math.floor(Math.random() * 60) + 10;
+        this.scaleAnim = 1.0;
+        this.targetScale = 1.0;
         this.pulsePhase = Math.random() * Math.PI * 2;
         this.angle = Math.random() * Math.PI * 2;
-        this.dnaHelixOffset = Math.random() * Math.PI * 2;
+        this.dnaOffset = Math.random() * Math.PI * 2;
     }
 
-    update(targetX, targetY) {
-        this.pulsePhase += 0.04;
+    update() {
+        this.pulsePhase += 0.03;
+        this.scaleAnim += (this.targetScale - this.scaleAnim) * 0.1;
 
         if (this.type === 'master') {
-            // 平滑跟随手势定位
-            this.x += (targetX - this.x) * 0.15;
-            this.y += (targetY - this.y) * 0.15;
+            if (handPos.active && !lockedCell) {
+                this.x += (handPos.x - this.x) * 0.1;
+                this.y += (handPos.y - this.y) * 0.1;
+            }
+        } else if (this === lockedCell) {
+            // 被锁定的细胞跟随手势移动并放大
+            this.targetScale = 2.2;
+            this.x += (handPos.x - this.x) * 0.15;
+            this.y += (handPos.y - this.y) * 0.15;
         } else {
+            this.targetScale = 1.0;
             if (currentLayout === 'chessboard') {
                 this.x += (this.baseX - this.x) * 0.05;
                 this.y += (this.baseY - this.y) * 0.05;
             } else if (currentLayout === 'dna') {
-                this.dnaHelixOffset += 0.03;
-                let targetX = this.baseX + Math.sin(this.dnaHelixOffset) * 45;
+                this.dnaOffset += 0.025;
+                let targetX = this.baseX + Math.sin(this.dnaOffset) * 50;
                 this.x += (targetX - this.x) * 0.08;
                 this.y += (this.baseY - this.y) * 0.08;
             } else if (currentLayout === 'circular') {
                 let cx = width / 2, cy = height / 2;
-                this.angle += 0.005;
+                this.angle += 0.004;
                 let dist = Math.hypot(this.baseX - cx, this.baseY - cy);
-                let targetX = cx + Math.cos(this.angle) * dist;
-                let targetY = cy + Math.sin(this.angle) * dist;
-                this.x += (targetX - this.x) * 0.05;
-                this.y += (targetY - this.y) * 0.05;
+                let tx = cx + Math.cos(this.angle) * dist;
+                let ty = cy + Math.sin(this.angle) * dist;
+                this.x += (tx - this.x) * 0.05;
+                this.y += (ty - this.y) * 0.05;
             } else {
                 this.x += this.vx;
                 this.y += this.vy;
-                if (this.x < 50 || this.x > width - 50) this.vx *= -1;
-                if (this.y < 50 || this.y > height - 50) this.vy *= -1;
+                if (this.x < 60 || this.x > width - 60) this.vx *= -1;
+                if (this.y < 60 || this.y > height - 60) this.vy *= -1;
             }
         }
     }
 
     draw() {
         ctx.save();
-        let currentRadius = this.radius + Math.sin(this.pulsePhase) * 2;
+        ctx.translate(this.x, this.y);
+        ctx.scale(this.scaleAnim, this.scaleAnim);
 
-        if (this.type === 'master') {
-            let grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, currentRadius * 2);
+        let r = this.radius;
+
+        if (this.type === 'master' || this.subType === 0) {
+            // 样式 0：发光神经元细胞（带多条纤维突触）
+            let grad = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 1.8);
             grad.addColorStop(0, 'rgba(0, 240, 255, 0.6)');
-            grad.addColorStop(0.5, 'rgba(168, 85, 247, 0.2)');
+            grad.addColorStop(0.5, 'rgba(168, 85, 247, 0.25)');
             grad.addColorStop(1, 'transparent');
             ctx.fillStyle = grad;
             ctx.beginPath();
-            ctx.arc(this.x, this.y, currentRadius * 2, 0, Math.PI * 2);
+            ctx.arc(0, 0, r * 1.8, 0, Math.PI * 2);
             ctx.fill();
 
             ctx.strokeStyle = '#00f0ff';
-            ctx.lineWidth = 2.5;
+            ctx.lineWidth = 2;
             ctx.beginPath();
-            ctx.arc(this.x, this.y, currentRadius, 0, Math.PI * 2);
+            ctx.arc(0, 0, r * 0.7, 0, Math.PI * 2);
             ctx.stroke();
 
-            for (let i = 0; i < 8; i++) {
-                let angle = (i / 8) * Math.PI * 2 + this.pulsePhase * 0.2;
-                let x2 = this.x + Math.cos(angle) * (currentRadius * 1.8);
-                let y2 = this.y + Math.sin(angle) * (currentRadius * 1.8);
-                ctx.strokeStyle = 'rgba(0, 240, 255, 0.4)';
-                ctx.lineWidth = 1.5;
+            // 神经元突触线条
+            for (let i = 0; i < 6; i++) {
+                let angle = (i / 6) * Math.PI * 2 + this.pulsePhase * 0.2;
+                ctx.strokeStyle = 'rgba(0, 240, 255, 0.5)';
                 ctx.beginPath();
-                ctx.moveTo(this.x + Math.cos(angle) * currentRadius, this.y + Math.sin(angle) * currentRadius);
-                ctx.lineTo(x2, y2);
+                ctx.moveTo(Math.cos(angle) * (r * 0.7), Math.sin(angle) * (r * 0.7));
+                ctx.lineTo(Math.cos(angle) * (r * 1.6), Math.sin(angle) * (r * 1.6));
                 ctx.stroke();
             }
-
-            const masterTag = document.getElementById('masterTag');
-            masterTag.style.left = `${this.x + 55}px`;
-            masterTag.style.top = `${this.y - 30}px`;
-            masterTag.classList.remove('hidden');
-        } else {
-            ctx.fillStyle = this.color;
-            ctx.shadowColor = this.color;
-            ctx.shadowBlur = 10;
+        } else if (this.subType === 1) {
+            // 样式 1：植物细胞切片风格（多边形蜂窝状 + 细胞核）
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 1.5;
+            ctx.fillStyle = 'rgba(14, 116, 144, 0.35)';
             ctx.beginPath();
-            ctx.arc(this.x, this.y, currentRadius * 0.5, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.shadowBlur = 0;
-
-            if (this.id % 3 === 0) {
-                ctx.strokeStyle = 'rgba(0, 240, 255, 0.3)';
-                ctx.strokeRect(this.x + 8, this.y - 14, 54, 22);
-                ctx.fillStyle = 'rgba(0, 240, 255, 0.8)';
-                ctx.font = '9px "Share Tech Mono", monospace';
-                ctx.fillText(`ID:${this.id}`, this.x + 11, this.y - 2);
+            for (let i = 0; i < 6; i++) {
+                let a = (i / 6) * Math.PI * 2;
+                let px = Math.cos(a) * r;
+                let py = Math.sin(a) * r;
+                if (i === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
             }
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // 内部细胞核
+            ctx.fillStyle = '#f472b6';
+            ctx.beginPath();
+            ctx.arc(0, 0, r * 0.3, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            // 样式 2：圆润细胞膜结构（类似高倍镜下的活细胞）
+            ctx.strokeStyle = '#a855f7';
+            ctx.lineWidth = 2;
+            ctx.fillStyle = 'rgba(168, 85, 247, 0.2)';
+            ctx.beginPath();
+            ctx.arc(0, 0, r, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // 内部微小颗粒
+            ctx.fillStyle = '#00f0ff';
+            ctx.beginPath();
+            ctx.arc(r * 0.3, -r * 0.2, 3, 0, Math.PI * 2);
+            ctx.arc(-r * 0.2, r * 0.3, 2, 0, Math.PI * 2);
+            ctx.fill();
         }
+
+        // 数据悬浮框
+        if (this.id % 2 === 0 || this.type === 'master') {
+            ctx.strokeStyle = 'rgba(0, 240, 255, 0.4)';
+            ctx.strokeRect(r + 6, -12, 50, 20);
+            ctx.fillStyle = 'rgba(0, 240, 255, 0.9)';
+            ctx.font = '9px "Share Tech Mono", monospace';
+            ctx.fillText(`ID:${this.id}`, r + 10, 2);
+        }
+
         ctx.restore();
     }
 }
 
-// 初始化细胞
+// 爆炸粒子（用于手掌张开时的细胞粒子爆发效果）
+class ExplosionParticle {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        let angle = Math.random() * Math.PI * 2;
+        let speed = Math.random() * 6 + 2;
+        this.vx = Math.cos(angle) * speed;
+        this.vy = Math.sin(angle) * speed;
+        this.alpha = 1.0;
+        this.color = Math.random() > 0.5 ? '#00f0ff' : '#f472b6';
+    }
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.alpha -= 0.025;
+    }
+    draw() {
+        ctx.save();
+        ctx.globalAlpha = Math.max(this.alpha, 0);
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+}
+
+// 初始化布局
 function initCells() {
     cells = [];
-    if (isMasterActive) {
-        masterNeuron = new Cell(width / 2, height / 2, 'master');
-        cells.push(masterNeuron);
-    }
-    let count = 45;
+    let master = new Cell(width / 2, height / 2, 'master', 0);
+    cells.push(master);
+
+    let count = 35;
     for (let i = 0; i < count; i++) {
         let x, y;
+        let subT = i % 3;
         if (currentLayout === 'chessboard') {
-            let cols = 9, rows = 5;
+            let cols = 8, rows = 5;
             let col = i % cols, row = Math.floor(i / cols);
-            x = (width / (cols + 1)) * (col + 1) + (Math.random() - 0.5) * 20;
-            y = (height / (rows + 2)) * (row + 1) + (Math.random() - 0.5) * 20;
+            x = (width / (cols + 1)) * (col + 1) + (Math.random() - 0.5) * 30;
+            y = (height / (rows + 2)) * (row + 1) + (Math.random() - 0.5) * 30;
         } else if (currentLayout === 'dna') {
+            // DNA 双螺旋结构严密排列
             let p = i / count;
+            let strand = i % 2 === 0 ? 1 : -1;
             x = width * 0.2 + p * (width * 0.6);
-            y = height / 2 + Math.sin(p * Math.PI * 4) * 120;
+            y = height / 2 + strand * Math.sin(p * Math.PI * 6) * 90;
         } else if (currentLayout === 'circular') {
             let angle = (i / count) * Math.PI * 2;
             let radius = Math.min(width, height) * 0.32;
             x = width / 2 + Math.cos(angle) * radius;
             y = height / 2 + Math.sin(angle) * radius;
         } else {
-            x = Math.random() * (width - 100) + 50;
-            y = Math.random() * (height - 100) + 50;
+            x = Math.random() * (width - 120) + 60;
+            y = Math.random() * (height - 120) + 60;
         }
-        cells.push(new Cell(x, y, 'normal'));
+        cells.push(new Cell(x, y, 'normal', subT));
     }
     updateNodeCounter();
 }
@@ -173,34 +245,28 @@ function setLayout(layout) {
     initCells();
 }
 
-function toggleSeedMaster() {
-    isMasterActive = !isMasterActive;
-    const btn = document.getElementById('btn-seed');
-    if (isMasterActive) {
+// 【查看模型】开关（全景缩放与旋转控制）
+function toggleViewModel() {
+    isViewModel = !isViewModel;
+    const btn = document.getElementById('btn-view');
+    if (isViewModel) {
         btn.classList.add('active');
-        masterNeuron = new Cell(handPosition.x, handPosition.y, 'master');
-        cells.unshift(masterNeuron);
+        document.getElementById('modeStatus').innerText = '模型全景漫游 [View Model]';
     } else {
         btn.classList.remove('active');
-        cells = cells.filter(c => c.type !== 'master');
-        masterNeuron = null;
-        document.getElementById('masterTag').classList.add('hidden');
+        globalScale = 1.0;
+        globalRotation = 0.0;
+        document.getElementById('modeStatus').innerText = '自由漂移 [Free]';
     }
-    updateNodeCounter();
+}
+
+function toggleSeedMaster() {
+    initCells();
 }
 
 function clearScreen() {
     cells = [];
-    masterNeuron = null;
-    isMasterActive = false;
-    document.getElementById('btn-seed').classList.remove('active');
-    document.getElementById('masterTag').classList.add('hidden');
-    updateNodeCounter();
-}
-
-function spawnCellAt(x, y) {
-    if (cells.length > 120) return;
-    cells.push(new Cell(x, y, 'normal'));
+    lockedCell = null;
     updateNodeCounter();
 }
 
@@ -208,33 +274,7 @@ function updateNodeCounter() {
     document.getElementById('nodeCounter').innerText = cells.length;
 }
 
-// 放电粒子
-class Spark {
-    constructor(x, y) {
-        this.x = x;
-        this.y = y;
-        let angle = Math.random() * Math.PI * 2;
-        let speed = Math.random() * 4 + 1;
-        this.vx = Math.cos(angle) * speed;
-        this.vy = Math.sin(angle) * speed;
-        this.alpha = 1;
-        this.color = Math.random() > 0.5 ? '#00f0ff' : '#ec4899';
-    }
-    update() {
-        this.x += this.vx;
-        this.y += this.vy;
-        this.alpha -= 0.03;
-    }
-    draw() {
-        ctx.save();
-        ctx.globalAlpha = Math.max(this.alpha, 0);
-        ctx.fillStyle = this.color;
-        ctx.fillRect(this.x, this.y, 2, 2);
-        ctx.restore();
-    }
-}
-
-// MediaPipe 手势识别初始化
+// MediaPipe 手势识别与交互控制逻辑
 const videoElement = document.getElementById('webcamVideo');
 const hands = new Hands({
     locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
@@ -243,38 +283,77 @@ const hands = new Hands({
 hands.setOptions({
     maxNumHands: 1,
     modelComplexity: 1,
-    minDetectionConfidence: 0.65,
-    minTrackingConfidence: 0.65
+    minDetectionConfidence: 0.7,
+    minTrackingConfidence: 0.7
 });
 
 hands.onResults((results) => {
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-        document.getElementById('gestureStatus').innerText = '手势已连接 [Connected]';
         const landmarks = results.multiHandLandmarks[0];
-        
-        // 获取食指指尖 (第 8 号关节)
         const indexTip = landmarks[8];
-        // 获取拇指指尖 (第 4 号关节)
         const thumbTip = landmarks[4];
+        const wrist = landmarks[0];
 
-        // 坐标映射并左右镜像反转
-        handPosition.x = (1 - indexTip.x) * width;
-        handPosition.y = indexTip.y * height;
-        handPosition.active = true;
+        handPos.x = (1 - indexTip.x) * width;
+        handPos.y = indexTip.y * height;
+        handPos.active = true;
 
-        // 检测捏合手势（拇指与食指距离过近）
+        // 检测双指捏合（锁定/放大细胞）
         let pinchDist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
         if (pinchDist < 0.05) {
-            if (!handPosition.isPinching) {
-                handPosition.isPinching = true;
-                spawnCellAt(handPosition.x, handPosition.y); // 捏合时在空中生成小细胞
+            if (!handPos.isPinching) {
+                handPos.isPinching = true;
+                if (!lockedCell) {
+                    // 寻找最近的细胞进行锁定放大
+                    let closest = null;
+                    let minDist = 120;
+                    cells.forEach(c => {
+                        let d = Math.hypot(c.x - handPos.x, c.y - handPos.y);
+                        if (d < minDist) {
+                            minDist = d;
+                            closest = c;
+                        }
+                    });
+                    if (closest) {
+                        lockedCell = closest;
+                        document.getElementById('masterTag').classList.remove('hidden');
+                        document.getElementById('tagName').innerText = `Cell ID: ${lockedCell.id}`;
+                        document.getElementById('tagState').innerText = `Status: Locked & Expanded`;
+                    }
+                }
             }
         } else {
-            handPosition.isPinching = false;
+            handPos.isPinching = false;
         }
+
+        // 检测手掌张开（触发粒子爆炸散开效果）
+        let spreadDist = Math.hypot(indexTip.x - wrist.x, indexTip.y - wrist.y);
+        if (spreadDist > 0.35) {
+            if (!handPos.isOpenPalm) {
+                handPos.isOpenPalm = true;
+                if (lockedCell) {
+                    // 解除锁定并产生粒子爆发
+                    for (let k = 0; k < 40; k++) {
+                        explosionParticles.push(new ExplosionParticle(lockedCell.x, lockedCell.y));
+                    }
+                    cells = cells.filter(c => c !== lockedCell);
+                    lockedCell = null;
+                    document.getElementById('masterTag').classList.add('hidden');
+                    updateNodeCounter();
+                }
+            }
+        } else {
+            handPos.isOpenPalm = false;
+        }
+
+        // 如果在【查看模型】模式下，手势左右移动可以控制整体旋转与缩放
+        if (isViewModel) {
+            globalRotation = (indexTip.x - 0.5) * Math.PI;
+            globalScale = 0.8 + (1 - indexTip.y) * 0.6;
+        }
+
     } else {
-        document.getElementById('gestureStatus').innerText = '寻找手势中...';
-        handPosition.active = false;
+        handPos.active = false;
     }
 });
 
@@ -285,11 +364,9 @@ const camera = new Camera(videoElement, {
     width: 640,
     height: 480
 });
-camera.start().catch(err => {
-    console.log("摄像头启动提示：若未连接摄像头，系统将使用默认居中坐标。");
-});
+camera.start().catch(() => {});
 
-// 主循环
+// 主渲染循环
 function animate(currentTime) {
     frameCount++;
     if (currentTime - lastTime >= 1000) {
@@ -299,54 +376,53 @@ function animate(currentTime) {
         lastTime = currentTime;
     }
 
-    ctx.fillStyle = 'rgba(2, 5, 14, 0.35)';
+    ctx.fillStyle = 'rgba(2, 5, 14, 0.4)';
     ctx.fillRect(0, 0, width, height);
 
-    // 绘制神经元连线
+    ctx.save();
+    if (isViewModel) {
+        ctx.translate(width / 2, height / 2);
+        ctx.rotate(globalRotation);
+        ctx.scale(globalScale, globalScale);
+        ctx.translate(-width / 2, -height / 2);
+    }
+
+    // 绘制高保真神经元连线
     for (let i = 0; i < cells.length; i++) {
         for (let j = i + 1; j < cells.length; j++) {
             let c1 = cells[i], c2 = cells[j];
             let dist = Math.hypot(c1.x - c2.x, c1.y - c2.y);
-            let threshold = (c1.type === 'master' || c2.type === 'master') ? 240 : 130;
+            let threshold = 160;
 
             if (dist < threshold) {
-                let opacity = (1 - dist / threshold) * 0.45;
-                ctx.strokeStyle = c1.type === 'master' || c2.type === 'master' ? `rgba(0, 240, 255, ${opacity * 1.5})` : `rgba(168, 85, 247, ${opacity})`;
-                ctx.lineWidth = c1.type === 'master' || c2.type === 'master' ? 1.5 : 0.8;
+                let opacity = (1 - dist / threshold) * 0.5;
+                ctx.strokeStyle = `rgba(0, 240, 255, ${opacity})`;
+                ctx.lineWidth = 1.2;
                 
                 ctx.beginPath();
                 ctx.moveTo(c1.x, c1.y);
-                let midX = (c1.x + c2.x) / 2 + (Math.sin(currentTime * 0.002 + i) * 10);
-                let midY = (c1.y + c2.y) / 2 + (Math.cos(currentTime * 0.002 + j) * 10);
+                let midX = (c1.x + c2.x) / 2 + Math.sin(currentTime * 0.002 + i) * 12;
+                let midY = (c1.y + c2.y) / 2 + Math.cos(currentTime * 0.002 + j) * 12;
                 ctx.quadraticCurveTo(midX, midY, c2.x, c2.y);
                 ctx.stroke();
-
-                if ((c1.type === 'master' || c2.type === 'master') && Math.random() < 0.03) {
-                    particles.push(new Spark(midX, midY));
-                }
             }
         }
     }
 
-    // 更新细胞跟随手势坐标
-    let targetX = handPosition.active ? handPosition.x : width / 2;
-    let targetY = handPosition.active ? handPosition.y : height / 2;
-
+    // 更新与绘制细胞
     cells.forEach(cell => {
-        if (cell.type === 'master') {
-            cell.update(targetX, targetY);
-        } else {
-            cell.update(0, 0);
-        }
+        cell.update();
         cell.draw();
     });
 
-    for (let i = particles.length - 1; i >= 0; i--) {
-        particles[i].update();
-        particles[i].draw();
-        if (particles[i].alpha <= 0) particles.splice(i, 1);
+    // 更新与绘制粒子爆发
+    for (let i = explosionParticles.length - 1; i >= 0; i--) {
+        explosionParticles[i].update();
+        explosionParticles[i].draw();
+        if (explosionParticles[i].alpha <= 0) explosionParticles.splice(i, 1);
     }
 
+    ctx.restore();
     requestAnimationFrame(animate);
 }
 

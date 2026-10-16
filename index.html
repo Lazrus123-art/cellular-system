@@ -3,72 +3,62 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hajime Kutsuwada 风格 - 纯手势生物细胞交互系统</title>
-    <!-- Tailwind CSS 样式库 -->
+    <title>Hajime Kutsuwada 风格 - 高保真细胞神经元交互系统 V4</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Google MediaPipe 手势识别库 -->
+    <!-- 引入 MediaPipe 手势识别 -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-    <!-- 数字科技字体 -->
     <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body class="bg-[#02050e] text-cyan-300 overflow-hidden select-none font-sans">
 
-    <!-- 全屏渲染 Canvas -->
+    <!-- 渲染画布 -->
     <canvas id="neuralCanvas" class="absolute inset-0 z-0"></canvas>
-
-    <!-- 隐藏的视频元素，用于接收摄像头画面进行 MediaPipe 手势检测 -->
     <video id="webcamVideo" class="hidden" autoplay playsinline></video>
 
-    <!-- 左上角：赛博朋克实时数据监视 HUD 面板 -->
+    <!-- 左上角 HUD 监视面板 -->
     <div class="absolute top-6 left-6 z-20 cyber-panel p-4 rounded-xl backdrop-blur-md text-xs w-72">
         <div class="flex items-center justify-between border-b border-cyan-500/30 pb-2 mb-2">
-            <span class="font-bold tracking-wider text-cyan-400 font-mono">GESTURE BIO-SYSTEM V3</span>
+            <span class="font-bold tracking-wider text-cyan-400 font-mono">CELLULAR SYSTEM V4</span>
             <span class="inline-block w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
         </div>
         <div class="space-y-1.5 font-mono text-slate-300">
             <div class="flex justify-between"><span>FPS 实时帧率:</span> <span id="fpsCounter" class="text-cyan-400">60</span></div>
             <div class="flex justify-between"><span>活跃细胞总数:</span> <span id="nodeCounter" class="text-cyan-400">0</span></div>
-            <div class="flex justify-between"><span>AI 手势状态:</span> <span id="gestureStatus" class="text-emerald-400">追踪中 [Tracking]</span></div>
+            <div class="flex justify-between"><span>当前交互模式:</span> <span id="modeStatus" class="text-purple-400">自由漂移 [Free]</span></div>
         </div>
     </div>
 
-    <!-- 主神经元细胞悬浮数据标签 -->
-    <div id="masterTag" class="absolute z-20 hidden cyber-panel px-3 py-1.5 rounded text-[11px] font-mono pointer-events-none text-cyan-300">
-        <div class="text-cyan-400 font-bold">Mature Neuron [主神经元]</div>
-        <div>State: Gesture Locked [手势锁定]</div>
-        <div>Func. Age: <span id="tagAge">30</span></div>
+    <!-- 细胞状态悬浮标签 -->
+    <div id="masterTag" class="absolute z-25 hidden cyber-panel px-3 py-1.5 rounded text-[11px] font-mono pointer-events-none text-cyan-300">
+        <div class="text-cyan-400 font-bold" id="tagName">Locked Cell</div>
+        <div id="tagState">State: Active Analysis</div>
     </div>
 
-    <!-- 底部悬浮控制面板 (纯手势动作对照说明) -->
-    <div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 w-[95%] max-w-5xl">
+    <!-- 底部控制面板与【查看模型】UI 按键 -->
+    <div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 w-[95%] max-w-6xl">
         <div class="cyber-panel rounded-xl p-4 flex flex-col md:flex-row items-center justify-between gap-4">
             
-            <!-- 左侧：纯手势动作指南 -->
-            <div class="flex flex-wrap items-center gap-3 text-xs">
-                <div class="flex items-center gap-2 px-3 py-1.5 rounded bg-slate-900/60 border border-slate-700/50">
-                    <span class="text-cyan-400 font-mono font-bold">[食指指向]</span>
-                    <span class="text-slate-300">控制主神经元移动与连线</span>
-                </div>
-                <div class="flex items-center gap-2 px-3 py-1.5 rounded bg-slate-900/60 border border-slate-700/50">
-                    <span class="text-purple-400 font-mono font-bold">[双指捏合]</span>
-                    <span class="text-slate-300">生成小细胞 / SEED</span>
-                </div>
+            <!-- 手势与功能对照说明 -->
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+                <span class="px-2.5 py-1 rounded bg-slate-900/60 border border-slate-700 text-cyan-400">[捏合: 锁定/放大细胞]</span>
+                <span class="px-2.5 py-1 rounded bg-slate-900/60 border border-slate-700 text-purple-400">[张开手掌: 粒子爆发]</span>
             </div>
 
-            <!-- 中间：阵列形态切换 -->
+            <!-- 阵列形态切换 -->
             <div class="flex items-center gap-1.5 bg-slate-950/50 p-1.5 rounded-lg border border-slate-800">
-                <button onclick="setLayout('chessboard')" id="btn-chessboard" class="cyber-button px-3 py-1.5 rounded text-xs mono-font text-cyan-300 transition">棋盘格</button>
-                <button onclick="setLayout('dna')" id="btn-dna" class="cyber-button px-3 py-1.5 rounded text-xs mono-font text-cyan-300 transition">DNA 螺旋</button>
-                <button onclick="setLayout('circular')" id="btn-circular" class="cyber-button px-3 py-1.5 rounded text-xs mono-font text-cyan-300 transition">环形排列</button>
-                <button onclick="setLayout('random')" id="btn-random" class="cyber-button px-3 py-1.5 rounded text-xs mono-font text-cyan-300 transition">随意散开</button>
+                <button onclick="setLayout('chessboard')" id="btn-chessboard" class="cyber-button px-3 py-1.5 rounded text-xs mono-font text-cyan-300">棋盘格</button>
+                <button onclick="setLayout('dna')" id="btn-dna" class="cyber-button px-3 py-1.5 rounded text-xs mono-font text-cyan-300">DNA双螺旋</button>
+                <button onclick="setLayout('circular')" id="btn-circular" class="cyber-button px-3 py-1.5 rounded text-xs mono-font text-cyan-300">环形星系</button>
+                <button onclick="setLayout('random')" id="btn-random" class="cyber-button px-3 py-1.5 rounded text-xs mono-font text-cyan-300">随意漫游</button>
             </div>
 
-            <!-- 右侧：状态触发按钮 -->
+            <!-- 右侧核心功能区 (包含【查看模型】与清屏) -->
             <div class="flex items-center gap-2">
-                <button onclick="toggleSeedMaster()" id="btn-seed" class="cyber-button px-4 py-2 rounded-lg text-xs mono-font font-bold text-cyan-300">SEED [主神经元]</button>
-                <button onclick="clearScreen()" class="cyber-button px-4 py-2 rounded-lg text-xs mono-font font-bold text-pink-400 border-pink-500/40">CLEAR [一键清屏]</button>
+                <button onclick="toggleViewModel()" id="btn-view" class="cyber-button px-4 py-2 rounded-lg text-xs mono-font font-bold text-cyan-300">【查看模型】</button>
+                <button onclick="toggleSeedMaster()" id="btn-seed" class="cyber-button px-4 py-2 rounded-lg text-xs mono-font font-bold text-purple-300">SEED 主神经元</button>
+                <button onclick="clearScreen()" class="cyber-button px-4 py-2 rounded-lg text-xs mono-font font-bold text-pink-400 border-pink-500/40">清屏</button>
             </div>
 
         </div>
