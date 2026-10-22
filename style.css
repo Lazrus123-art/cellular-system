@@ -19,9 +19,8 @@ body {
 .mono-font { font-family: 'Share Tech Mono', monospace; }
 .title-font { font-family: 'Orbitron', sans-serif; }
 
-/* 赛博朋克 HUD 面板 */
 .cyber-panel {
-    background: rgba(2, 8, 23, 0.82);
+    background: rgba(2, 8, 23, 0.85);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border: 1px solid rgba(0, 240, 255, 0.3);
@@ -38,7 +37,6 @@ body {
     opacity: 0.6;
 }
 
-/* 交互按钮 */
 .cyber-button {
     background: rgba(15, 23, 42, 0.85);
     border: 1px solid rgba(0, 240, 255, 0.35);
@@ -62,7 +60,6 @@ body {
     font-weight: 600;
 }
 
-/* 扫描线纹理 */
 body::after {
     content: "";
     position: absolute;
