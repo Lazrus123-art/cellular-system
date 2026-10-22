@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hajime Kutsuwada 风格 - 纯手势生物细胞交互系统 V3</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- MediaPipe 手势识别 -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <!-- 引入外部样式表 -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="text-cyan-300">
+
+    <canvas id="neuralCanvas" class="absolute inset-0 z-0"></canvas>
+    <video id="webcamVideo" class="hidden" autoplay playsinline></video>
+
+    <!-- 左上角 HUD -->
+    <div class="absolute top-6 left-6 z-20 cyber-panel p-4 rounded-xl text-xs w-72">
+        <div class="flex items-center justify-between border-b border-cyan-500/30 pb-2 mb-2">
+            <span class="font-bold tracking-wider text-cyan-400 title-font">CELLULAR SYSTEM 03</span>
+            <span class="inline-block w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+        </div>
+        <div class="space-y-1.5 mono-font text-slate-300">
+            <div class="flex justify-between"><span>FPS 实时帧率:</span> <span id="fpsCounter" class="text-cyan-400">60</span></div>
+            <div class="flex justify-between"><span>细胞总数:</span> <span id="nodeCounter" class="text-cyan-400">0</span></div>
+            <div class="flex justify-between"><span>吞噬数量:</span> <span id="eatenCounter" class="text-pink-400">0</span></div>
+            <div class="flex justify-between"><span>360° 旋转角:</span> <span id="angleCounter" class="text-purple-400">0°</span></div>
+            <div class="flex justify-between"><span>手势状态:</span> <span id="gestureStatus" class="text-emerald-400">初始化中...</span></div>
+        </div>
+    </div>
+
+    <!-- 主神经元标签 -->
+    <div id="masterTag" class="absolute z-20 hidden cyber-panel px-3 py-1.5 rounded text-[11px] mono-font pointer-events-none text-cyan-300">
+        <div class="text-cyan-400 font-bold">Mature Master Neuron</div>
+        <div>State: <span id="tagState" class="text-pink-400">Seeking Cells</span></div>
+        <div>Scale: <span id="tagScale">1.0x</span></div>
+    </div>
+
+    <!-- 底部控制面板 -->
+    <div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 w-[95%] max-w-5xl">
+        <div class="cyber-panel rounded-xl p-4 flex flex-col md:flex-row items-center justify-between gap-4">
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+                <div class="px-3 py-1.5 rounded bg-slate-900/80 border border-slate-700/60"><span class="text-cyan-400 font-bold">[鼠标 / 食指]</span> 控制主细胞</div>
+                <div class="px-3 py-1.5 rounded bg-slate-900/80 border border-slate-700/60"><span class="text-pink-400 font-bold">[食指向上指 / 点击]</span> 生成新细胞</div>
+                <div class="px-3 py-1.5 rounded bg-slate-900/80 border border-slate-700/60"><span class="text-purple-400 font-bold">[捏合 / 拖拽]</span> 旋转 360°</div>
+            </div>
+
+            <div class="flex items-center gap-1.5 bg-slate-950/60 p-1.5 rounded-lg border border-slate-800">
+                <button onclick="setLayout('circular')" id="btn-circular" class="cyber-button px-3 py-1.5 rounded text-xs mono-font">环形阵列</button>
+                <button onclick="setLayout('dna')" id="btn-dna" class="cyber-button px-3 py-1.5 rounded text-xs mono-font">DNA 螺旋</button>
+                <button onclick="setLayout('chessboard')" id="btn-chessboard" class="cyber-button px-3 py-1.5 rounded text-xs mono-font">网格矩阵</button>
+                <button onclick="setLayout('random')" id="btn-random" class="cyber-button px-3 py-1.5 rounded text-xs mono-font">游离游走</button>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <button onclick="toggleSeedMaster()" id="btn-seed" class="cyber-button active px-4 py-2 rounded-lg text-xs mono-font font-bold">主细胞 [SEED]</button>
+                <button onclick="resetView()" class="cyber-button px-3 py-2 rounded-lg text-xs mono-font">视角重置</button>
+                <button onclick="clearScreen()" class="cyber-button px-3 py-2 rounded-lg text-xs mono-font text-pink-400 border-pink-500/40">清屏</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 引入外部逻辑脚本 -->
+    <script src="script.js"></script>
+</body>
+</html>
