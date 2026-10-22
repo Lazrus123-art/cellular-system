@@ -24,30 +24,29 @@ let targetRotationAngleY = 0;
 let isDragging = false;
 let previousMouseX = 0;
 
-// 控制坐标：默认跟随鼠标，有手势时被手势接管
-const controlPosition = { x: width / 2, y: height / 2, active: false };
+// 手势识别坐标对象
+const handPosition = { x: width / 2, y: height / 2, active: false };
 let lastSpawnTime = 0;
 
 class Cell {
     constructor(x, y, type = 'normal', cellStyle = 0) {
         this.x = x;
         this.y = y;
-        this.z = (Math.random() - 0.5) * 400;
+        this.z = (Math.random() - 0.5) * 200; // 限制3D深度，防止跑太远
         this.baseX = x;
         this.baseY = y;
-        this.vx = (Math.random() - 0.5) * 0.8;
-        this.vy = (Math.random() - 0.5) * 0.8;
+        this.vx = (Math.random() - 0.5) * 0.6;
+        this.vy = (Math.random() - 0.5) * 0.6;
         
         this.type = type;
         this.cellStyle = cellStyle;
-        this.radius = type === 'master' ? 50 : (Math.random() * 12 + 10);
+        this.radius = type === 'master' ? 45 : (Math.random() * 10 + 12);
         this.targetRadius = this.radius;
         this.id = Math.floor(Math.random() * 900) + 100;
         
         this.pulsePhase = Math.random() * Math.PI * 2;
-        this.angle = Math.random() * Math.PI * 2;
         this.dnaHelixOffset = Math.random() * Math.PI * 2;
-        this.lobes = Array.from({length: 5}, () => Math.random() * 0.4 + 0.8);
+        this.lobes = Array.from({length: 5}, () => Math.random() * 0.3 + 0.85);
     }
 
     update(targetX, targetY) {
@@ -55,30 +54,38 @@ class Cell {
         this.radius += (this.targetRadius - this.radius) * 0.1;
 
         if (this.type === 'master') {
+            // 主神经元平滑跟随手势或鼠标兜底
             this.x += (targetX - this.x) * 0.15;
             this.y += (targetY - this.y) * 0.15;
+            // 限制在屏幕内
+            this.x = Math.max(60, Math.min(width - 60, this.x));
+            this.y = Math.max(60, Math.min(height - 60, this.y));
         } else {
+            // 规整的阵列计算
             if (currentLayout === 'chessboard') {
-                this.x += (this.baseX - this.x) * 0.05;
-                this.y += (this.baseY - this.y) * 0.05;
+                this.x += (this.baseX - this.x) * 0.08;
+                this.y += (this.baseY - this.y) * 0.08;
             } else if (currentLayout === 'dna') {
-                this.dnaHelixOffset += 0.02;
-                let targetX = this.baseX + Math.sin(this.dnaHelixOffset) * 60;
-                this.x += (targetX - this.x) * 0.06;
-                this.y += (this.baseY - this.y) * 0.06;
+                this.dnaHelixOffset += 0.025;
+                let targetX = this.baseX;
+                let targetY = this.baseY + Math.sin(this.dnaHelixOffset) * 25;
+                this.x += (targetX - this.x) * 0.08;
+                this.y += (targetY - this.y) * 0.08;
             } else if (currentLayout === 'circular') {
                 let cx = width / 2, cy = height / 2;
-                this.angle += 0.003;
                 let dist = Math.hypot(this.baseX - cx, this.baseY - cy);
-                let targetX = cx + Math.cos(this.angle) * dist;
-                let targetY = cy + Math.sin(this.angle) * dist;
-                this.x += (targetX - this.x) * 0.04;
-                this.y += (targetY - this.y) * 0.04;
+                let currentAngle = Math.atan2(this.baseY - cy, this.baseX - cx) + 0.002;
+                let targetX = cx + Math.cos(currentAngle) * dist;
+                let targetY = cy + Math.sin(currentAngle) * dist;
+                this.baseX = targetX;
+                this.baseY = targetY;
+                this.x += (targetX - this.x) * 0.08;
+                this.y += (targetY - this.y) * 0.08;
             } else {
                 this.x += this.vx;
                 this.y += this.vy;
-                if (this.x < 80 || this.x > width - 80) this.vx *= -1;
-                if (this.y < 80 || this.y > height - 80) this.vy *= -1;
+                if (this.x < 60 || this.x > width - 60) this.vx *= -1;
+                if (this.y < 60 || this.y > height - 60) this.vy *= -1;
             }
         }
     }
@@ -93,13 +100,14 @@ class Cell {
         let scale = 600 / (600 + rz);
         let drawX = cx + rx * scale;
         let drawY = this.y * scale + (1 - scale) * (height / 2);
-        let currentRadius = this.radius * scale + Math.sin(this.pulsePhase) * 2;
+        let currentRadius = this.radius * scale + Math.sin(this.pulsePhase) * 1.5;
 
         ctx.translate(drawX, drawY);
 
         if (this.type === 'master') {
+            // 主神经元渲染
             let grad = ctx.createRadialGradient(0, 0, 0, 0, 0, currentRadius * 2);
-            grad.addColorStop(0, 'rgba(0, 240, 255, 0.7)');
+            grad.addColorStop(0, 'rgba(0, 240, 255, 0.75)');
             grad.addColorStop(0.4, 'rgba(168, 85, 247, 0.3)');
             grad.addColorStop(1, 'transparent');
             
@@ -111,19 +119,10 @@ class Cell {
             ctx.strokeStyle = '#00f0ff';
             ctx.lineWidth = 2.5;
             ctx.beginPath();
-            let points = 12;
-            for (let i = 0; i < points; i++) {
-                let a = (i / points) * Math.PI * 2;
-                let r = currentRadius + Math.sin(this.pulsePhase + i) * 6;
-                let px = Math.cos(a) * r;
-                let py = Math.sin(a) * r;
-                if (i === 0) ctx.moveTo(px, py);
-                else ctx.lineTo(px, py);
-            }
-            ctx.closePath();
+            ctx.arc(0, 0, currentRadius, 0, Math.PI * 2);
             ctx.stroke();
 
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
             ctx.beginPath();
             ctx.arc(0, 0, currentRadius * 0.3, 0, Math.PI * 2);
             ctx.fill();
@@ -132,11 +131,13 @@ class Cell {
             masterTag.style.left = `${drawX + 50}px`;
             masterTag.style.top = `${drawY - 30}px`;
             masterTag.classList.remove('hidden');
-            document.getElementById('tagScale').innerText = (this.radius / 50).toFixed(2) + 'x';
+            document.getElementById('tagScale').innerText = (this.radius / 45).toFixed(2) + 'x';
         } else {
+            // 参考图中的规整科技细胞样式
             if (this.cellStyle === 0) {
-                ctx.strokeStyle = 'rgba(0, 240, 255, 0.8)';
-                ctx.fillStyle = 'rgba(0, 240, 255, 0.15)';
+                // 有机质膜伪足细胞
+                ctx.strokeStyle = 'rgba(0, 240, 255, 0.85)';
+                ctx.fillStyle = 'rgba(0, 240, 255, 0.12)';
                 ctx.lineWidth = 1.5;
                 ctx.beginPath();
                 for (let i = 0; i < 5; i++) {
@@ -150,26 +151,22 @@ class Cell {
                 ctx.closePath();
                 ctx.fill();
                 ctx.stroke();
-                ctx.fillStyle = '#a855f7';
-                ctx.fillRect(-2, -2, 4, 4);
             } else if (this.cellStyle === 1) {
-                ctx.strokeStyle = 'rgba(236, 72, 153, 0.8)';
+                // 烟花神经突触细胞
+                ctx.strokeStyle = 'rgba(236, 72, 153, 0.85)';
                 ctx.lineWidth = 1.2;
                 let rays = 8;
                 for (let i = 0; i < rays; i++) {
                     let a = (i / rays) * Math.PI * 2;
-                    let r1 = currentRadius * 0.3;
-                    let r2 = currentRadius * (1.2 + Math.sin(this.pulsePhase + i) * 0.3);
+                    let r1 = currentRadius * 0.2;
+                    let r2 = currentRadius * (1.1 + Math.sin(this.pulsePhase + i) * 0.2);
                     ctx.beginPath();
                     ctx.moveTo(Math.cos(a) * r1, Math.sin(a) * r1);
                     ctx.lineTo(Math.cos(a) * r2, Math.sin(a) * r2);
                     ctx.stroke();
                 }
-                ctx.fillStyle = '#00f0ff';
-                ctx.beginPath();
-                ctx.arc(0, 0, 3, 0, Math.PI * 2);
-                ctx.fill();
             } else if (this.cellStyle === 2) {
+                // 多核线粒体细胞
                 ctx.fillStyle = 'rgba(168, 85, 247, 0.2)';
                 ctx.strokeStyle = '#a855f7';
                 ctx.lineWidth = 1.5;
@@ -183,16 +180,17 @@ class Cell {
                 ctx.arc(currentRadius * 0.3, 0, currentRadius * 0.2, 0, Math.PI * 2);
                 ctx.fill();
             } else {
-                ctx.strokeStyle = 'rgba(0, 240, 255, 0.5)';
+                // 科技感矩形框观察细胞（参考图中的标准 HUD 框）
+                ctx.strokeStyle = 'rgba(0, 240, 255, 0.6)';
                 ctx.lineWidth = 1;
                 let boxSize = currentRadius * 2.2;
                 ctx.strokeRect(-boxSize/2, -boxSize/2, boxSize, boxSize);
-                ctx.fillStyle = 'rgba(0, 240, 255, 0.8)';
+                ctx.fillStyle = 'rgba(0, 240, 255, 0.85)';
                 ctx.font = '9px "Share Tech Mono", monospace';
                 ctx.fillText(`ID:${this.id}`, -boxSize/2 + 3, -boxSize/2 - 3);
                 ctx.fillStyle = '#ec4899';
                 ctx.beginPath();
-                ctx.arc(0, 0, currentRadius * 0.5, 0, Math.PI * 2);
+                ctx.arc(0, 0, currentRadius * 0.4, 0, Math.PI * 2);
                 ctx.fill();
             }
         }
@@ -200,32 +198,40 @@ class Cell {
     }
 }
 
+// 严格规整的阵列初始化
 function initCells() {
     cells = [];
     if (isMasterActive) {
         masterNeuron = new Cell(width / 2, height / 2, 'master');
         cells.push(masterNeuron);
     }
-    let count = 48;
+    
+    let count = 40;
+    let cols = 8, rows = 5;
+    
     for (let i = 0; i < count; i++) {
         let x, y;
         if (currentLayout === 'chessboard') {
-            let cols = 8, rows = 6;
-            let col = i % cols, row = Math.floor(i / cols);
-            x = (width / (cols + 1)) * (col + 1) + (Math.random() - 0.5) * 20;
-            y = (height / (rows + 1)) * (row + 1) + (Math.random() - 0.5) * 20;
+            // 严格对齐的网格矩阵
+            let col = i % cols;
+            let row = Math.floor(i / cols);
+            x = (width / (cols + 1)) * (col + 1);
+            y = (height / (rows + 2)) * (row + 1) + 40;
         } else if (currentLayout === 'dna') {
+            // 规整对称的标准 DNA 双螺旋
             let p = i / count;
-            x = width * 0.15 + p * (width * 0.7);
-            y = height / 2 + Math.sin(p * Math.PI * 4) * 140;
+            let strand = i % 2 === 0 ? 1 : -1;
+            x = width * 0.2 + p * (width * 0.6);
+            y = height / 2 + strand * Math.sin(p * Math.PI * 4) * 120;
         } else if (currentLayout === 'circular') {
+            // 规整同心圆
             let angle = (i / count) * Math.PI * 2;
-            let radius = Math.min(width, height) * 0.32;
+            let radius = Math.min(width, height) * 0.3;
             x = width / 2 + Math.cos(angle) * radius;
             y = height / 2 + Math.sin(angle) * radius;
         } else {
-            x = Math.random() * (width - 160) + 80;
-            y = Math.random() * (height - 160) + 80;
+            x = Math.random() * (width - 200) + 100;
+            y = Math.random() * (height - 200) + 100;
         }
         cells.push(new Cell(x, y, 'normal', i % 4));
     }
@@ -233,7 +239,7 @@ function initCells() {
 }
 
 function spawnCellAt(x, y) {
-    if (cells.length > 130) return;
+    if (cells.length > 120) return;
     let style = Math.floor(Math.random() * 4);
     cells.push(new Cell(x, y, 'normal', style));
     updateNodeCounter();
@@ -254,7 +260,7 @@ class Spark {
     update() {
         this.x += this.vx;
         this.y += this.vy;
-        this.alpha -= 0.025;
+        this.alpha -= 0.03;
     }
     draw() {
         ctx.save();
@@ -265,7 +271,7 @@ class Spark {
     }
 }
 
-// MediaPipe 手势识别
+// MediaPipe 手势识别初始化
 const videoElement = document.getElementById('webcamVideo');
 const hands = new Hands({
     locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
@@ -281,36 +287,36 @@ hands.setOptions({
 hands.onResults((results) => {
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         const landmarks = results.multiHandLandmarks[0];
-        
         const indexTip = landmarks[8];
-        const indexPip = landmarks[6]; // 食指第二关节用于判断上下方向
+        const indexPip = landmarks[6]; // 用于判断食指向上指
         const thumbTip = landmarks[4];
 
-        controlPosition.x = (1 - indexTip.x) * width;
-        controlPosition.y = indexTip.y * height;
-        controlPosition.active = true;
+        // 映射坐标
+        handPosition.x = (1 - indexTip.x) * width;
+        handPosition.y = indexTip.y * height;
+        handPosition.active = true;
 
-        // 【手势新增】：食指指尖明显高于第二关节 (向上指 Point Up)
+        // 【核心恢复】：食指向上指（Point Up）在空中新增小细胞
         if (indexTip.y < indexPip.y - 0.05) {
             let now = performance.now();
-            if (now - lastSpawnTime > 400) { // 限制生成频率
-                spawnCellAt(controlPosition.x, controlPosition.y);
-                document.getElementById('gestureStatus').innerText = '手势向上指：生成新细胞！';
+            if (now - lastSpawnTime > 500) {
+                spawnCellAt(handPosition.x, handPosition.y);
+                document.getElementById('gestureStatus').innerText = '手势向上：已生成新细胞！';
                 lastSpawnTime = now;
             }
         } else {
-            document.getElementById('gestureStatus').innerText = '手势正常 [Tracking]';
+            document.getElementById('gestureStatus').innerText = '手势追踪中 [Tracking]';
         }
 
-        // 捏合判断 -> 触发 360 度旋转视角
+        // 捏合判断 -> 360 度旋转视角
         let pinchDist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
         if (pinchDist < 0.06) {
             targetRotationAngleY += 0.04;
-            document.getElementById('gestureStatus').innerText = '手势捏合：360°旋转中';
+            document.getElementById('gestureStatus').innerText = '捏合：360°视角旋转';
         }
     } else {
-        document.getElementById('gestureStatus').innerText = '未检测到手势 (已启用鼠标兜底)';
-        controlPosition.active = false;
+        document.getElementById('gestureStatus').innerText = '未检测到手势（鼠标控制模式）';
+        handPosition.active = false;
     }
 });
 
@@ -320,14 +326,14 @@ const camera = new Camera(videoElement, {
 });
 
 camera.start().catch(() => {
-    document.getElementById('gestureStatus').innerText = '无摄像头 (鼠标/触控交互模式)';
+    document.getElementById('gestureStatus').innerText = '无摄像头（鼠标交互模式）';
 });
 
-// 鼠标 & 触控兜底控制
+// 鼠标与触控兜底控制
 window.addEventListener('mousemove', (e) => {
-    if (!controlPosition.active) {
-        controlPosition.x = e.clientX;
-        controlPosition.y = e.clientY;
+    if (!handPosition.active) {
+        handPosition.x = e.clientX;
+        handPosition.y = e.clientY;
     }
     if (isDragging) {
         let deltaX = e.clientX - previousMouseX;
@@ -340,12 +346,11 @@ window.addEventListener('mousedown', (e) => {
     isDragging = true;
     previousMouseX = e.clientX;
 });
-
 window.addEventListener('mouseup', () => { isDragging = false; });
 
-// 点击鼠标空白处新增小细胞
+// 鼠标点击空白处也可以新增细胞
 window.addEventListener('click', (e) => {
-    if (!controlPosition.active) {
+    if (!handPosition.active) {
         spawnCellAt(e.clientX, e.clientY);
     }
 });
@@ -360,14 +365,14 @@ function checkCellConsumption() {
         let dist = Math.hypot(masterNeuron.x - cell.x, masterNeuron.y - cell.y);
         if (dist < masterNeuron.radius + cell.radius * 0.5) {
             for (let p = 0; p < 15; p++) {
-                particles.push(new Spark(cell.x, cell.y, cell.cellStyle === 1 ? '#ec4899' : '#00f0ff'));
+                particles.push(new Spark(cell.x, cell.y, '#00f0ff'));
             }
-            masterNeuron.targetRadius = Math.min(masterNeuron.targetRadius + 1.8, 110);
+            masterNeuron.targetRadius = Math.min(masterNeuron.targetRadius + 1.5, 90);
             cells.splice(i, 1);
             eatenCount++;
 
             document.getElementById('eatenCounter').innerText = eatenCount;
-            document.getElementById('tagState').innerText = 'Consuming Cell!';
+            document.getElementById('tagState').innerText = 'Consuming!';
             updateNodeCounter();
 
             setTimeout(() => {
@@ -396,7 +401,7 @@ function toggleSeedMaster() {
     const btn = document.getElementById('btn-seed');
     if (isMasterActive) {
         btn.classList.add('active');
-        masterNeuron = new Cell(controlPosition.x, controlPosition.y, 'master');
+        masterNeuron = new Cell(handPosition.x, handPosition.y, 'master');
         cells.unshift(masterNeuron);
     } else {
         btn.classList.remove('active');
@@ -409,7 +414,7 @@ function toggleSeedMaster() {
 
 function resetView() {
     targetRotationAngleY = 0;
-    if (masterNeuron) masterNeuron.targetRadius = 50;
+    if (masterNeuron) masterNeuron.targetRadius = 45;
 }
 
 function clearScreen() {
@@ -442,14 +447,15 @@ function animate(currentTime) {
     ctx.fillStyle = 'rgba(2, 5, 14, 0.35)';
     ctx.fillRect(0, 0, width, height);
 
+    // 绘制连线
     for (let i = 0; i < cells.length; i++) {
         for (let j = i + 1; j < cells.length; j++) {
             let c1 = cells[i], c2 = cells[j];
             let dist = Math.hypot(c1.x - c2.x, c1.y - c2.y);
-            let threshold = (c1.type === 'master' || c2.type === 'master') ? 260 : 130;
+            let threshold = (c1.type === 'master' || c2.type === 'master') ? 240 : 120;
 
             if (dist < threshold) {
-                let opacity = (1 - dist / threshold) * 0.4;
+                let opacity = (1 - dist / threshold) * 0.45;
                 ctx.strokeStyle = (c1.type === 'master' || c2.type === 'master') 
                     ? `rgba(0, 240, 255, ${opacity * 1.5})` 
                     : `rgba(168, 85, 247, ${opacity})`;
@@ -457,8 +463,8 @@ function animate(currentTime) {
                 
                 ctx.beginPath();
                 ctx.moveTo(c1.x, c1.y);
-                let midX = (c1.x + c2.x) / 2 + (Math.sin(currentTime * 0.002 + i) * 8);
-                let midY = (c1.y + c2.y) / 2 + (Math.cos(currentTime * 0.002 + j) * 8);
+                let midX = (c1.x + c2.x) / 2 + (Math.sin(currentTime * 0.002 + i) * 6);
+                let midY = (c1.y + c2.y) / 2 + (Math.cos(currentTime * 0.002 + j) * 6);
                 ctx.quadraticCurveTo(midX, midY, c2.x, c2.y);
                 ctx.stroke();
             }
@@ -467,8 +473,8 @@ function animate(currentTime) {
 
     checkCellConsumption();
 
-    let targetX = controlPosition.x;
-    let targetY = controlPosition.y;
+    let targetX = handPosition.x;
+    let targetY = handPosition.y;
 
     cells.forEach(cell => {
         if (cell.type === 'master') cell.update(targetX, targetY);
